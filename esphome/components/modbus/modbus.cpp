@@ -122,7 +122,18 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
       if (this->disable_crc_) {
         ESP_LOGD(TAG, "Modbus CRC Check failed, but ignored! %02X!=%02X", computed_crc, remote_crc);
       } else {
-        ESP_LOGW(TAG, "Modbus CRC Check failed! %02X!=%02X", computed_crc, remote_crc);
+        ESP_LOGW(TAG, "Modbus CRC Check fail! %02X!=%02X", computed_crc, remote_crc);
+        std::string raw_bytes;
+        for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
+            char hex[4];
+            snprintf(hex, sizeof(hex), "%02X ", this->rx_buffer_[i]);
+            raw_bytes += hex;
+        }
+        if(this->role == ModbusRole::SERVER){
+          ESP_LOGW(TAG, "SERVER Failed CRC msg:    %s", raw_bytes.c_str()); 
+        } else {
+          ESP_LOGW(TAG, "  CLIENT Failed CRC msg:    %s", raw_bytes.c_str());         
+        }
         return false;
       }
     }

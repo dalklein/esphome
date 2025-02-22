@@ -131,13 +131,19 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
     }
 
     if (!found) {
-      ESP_LOGW(TAG, "Could not match any register to address %02X. Sending exception response.", current_address);
-      std::vector<uint8_t> error_response;
-      error_response.push_back(this->address_);
-      error_response.push_back(0x81);
-      error_response.push_back(0x02);
-      this->send_raw(error_response);
-      return;
+                // Check if the device id is 0x0F before exception response
+      if (address_ == 0x0F ) {
+        ESP_LOGW(TAG, "ID: %02X, Reg. request: %02X, Start: %02X, Num: %02X, client wait response.", address_, current_address,start_address,number_of_registers);
+        return;
+      } else {
+        ESP_LOGW(TAG, "Could not match any register to address %02X. Sending exception response.", current_address);
+        std::vector<uint8_t> error_response;
+        error_response.push_back(this->address_);
+        error_response.push_back(0x81);
+        error_response.push_back(0x02);
+        this->send_raw(error_response);
+        return;
+      }
     }
   }
 

@@ -140,6 +140,7 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
   }
   std::vector<uint8_t> data(this->rx_buffer_.begin() + data_offset, this->rx_buffer_.begin() + data_offset + data_len);
   bool found = false;
+  bool mute_client = false;
   for (auto *device : this->devices_) {
     if (device->address_ == address) {
       // Is it an error response?
@@ -152,6 +153,9 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
           ESP_LOGD(TAG, "Ignoring Modbus error - not expecting a response");
         }
       } else if (this->role == ModbusRole::SERVER && (function_code == 0x3 || function_code == 0x4)) {
+        // check here if SERVER role with id 0F, mute client, to treat differently.
+        //   or?  call on_mb_read_registers() and let it strip off the desired registers 
+        //  and load them into client queue, so on_md_data() will receive response msg
         device->on_modbus_read_registers(function_code, uint16_t(data[1]) | (uint16_t(data[0]) << 8),
                                          uint16_t(data[3]) | (uint16_t(data[2]) << 8));
       } else {
@@ -164,6 +168,16 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
 
   if (!found) {
     ESP_LOGW(TAG, "Got Modbus frame from unknown address 0x%02X! ", address);
+    // Check if the address is 0x0F before logging the raw message bytes
+    if (address == 0x0F ) {
+        std::string raw_bytes;
+        for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
+            char hex[4];
+            snprintf(hex, sizeof(hex), "%02X ", this->rx_buffer_[i]);
+            raw_bytes += hex;
+        }
+        ESP_LOGW(TAG, "Batt1:    %s", raw_bytes.c_str()); 
+    }
   }
 
   // reset buffer

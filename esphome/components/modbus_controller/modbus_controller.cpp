@@ -162,6 +162,63 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
 //  return false;
 }
 
+void ModbusController::on_modbus_read_registers_mute(uint8_t function_code, uint16_t start_address,
+                                                uint16_t number_of_registers) {
+  ESP_LOGD(TAG,
+           "Received read holding/input registers for device 0x%X. FC: 0x%X. Start address: 0x%X. Number of registers: "
+           "0x%X.",
+           this->address_, function_code, start_address, number_of_registers);
+
+  std::vector<uint16_t> sixteen_bit_response;
+  for (uint16_t current_address = start_address; current_address < start_address + number_of_registers;) {
+    bool found = false;
+    for (auto *server_register : this->server_registers_) {
+      if (server_register->address == current_address) {
+        float value = server_register->read_lambda();
+
+        ESP_LOGD(TAG, "Matched register. Address: 0x%02X. Value type: %zu. Register count: %u. Value: %0.1f.",
+                 server_register->address, static_cast<uint8_t>(server_register->value_type),
+                 server_register->register_count, value);
+        std::vector<uint16_t> payload = float_to_payload(value, server_register->value_type);
+        sixteen_bit_response.insert(sixteen_bit_response.end(), payload.cbegin(), payload.cend());
+        current_address += server_register->register_count;
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+                // Check if the device id is 0x0F before exception response, 
+      if (address_ == 0x0F ) {
+        ESP_LOGW(TAG, "No reg. match for ID: %02X, reg: %02X, reg. start: %02X, no. regs.: %02X, .", address_, current_address,start_address,number_of_registers);
+        return; // true;
+      } else {
+        ESP_LOGW(TAG, "Could not match any register to address %02X. Sending exception response.", current_address);
+        std::vector<uint8_t> error_response;
+        error_response.push_back(this->address_);
+        error_response.push_back(0x81);
+        error_response.push_back(0x02);
+        this->send_raw(error_response);
+        return; // false;
+      }
+    }
+    // return false;
+  }
+    //  check here if address is 0x0F, put request registers into client queue
+    //     so that response data will be processed like normal client,
+    //   and _don't_ send out the response message like for a normal server.
+    //  if all registers in the request are matched, then decode the response data
+  std::vector<uint8_t> response;
+  for (auto v : sixteen_bit_response) {
+    auto decoded_value = decode_value(v);
+    response.push_back(decoded_value[0]);
+    response.push_back(decoded_value[1]);
+  }
+     //  and send server response out,  send() calls send_raw() and does the CRC
+  this->send(function_code, start_address, number_of_registers, response.size(), response.data());
+//  return false;
+}
+
 SensorSet ModbusController::find_sensors_(ModbusRegisterType register_type, uint16_t start_address) const {
   auto reg_it = std::find_if(
       std::begin(this->register_ranges_), std::end(this->register_ranges_),

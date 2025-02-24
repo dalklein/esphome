@@ -135,6 +135,21 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
       if (address_ == 0x0F ) {
         ESP_LOGW(TAG, "No reg. match for ID: %02X, reg: %02X, reg. start: %02X, no. regs.: %02X, .", address_, current_address,start_address,number_of_registers);
 // put these registers in the waiting for response queue for the mute client
+//   something like this from send_next_command() after the send() function
+        this->last_command_timestamp_ = millis();
+//        this->command_sent_callback_.call((int) function_code, start_address);
+
+//     // make a command item
+        auto current_command = make_unique<ModbusCommandItem>(
+          ModbusCommandItem::create_read_command(this, ModbusRegisterType::HOLDING, start_address, number_of_registers));
+
+//     // Move the commandItem to the response queue
+//        current_command->payload = std::vector<uint8_t>();  // Empty payload
+//         this->incoming_queue_.push(std::move(current_command));
+//         ESP_LOGV(TAG, "Modbus response queued");
+//         this->command_queue_.pop_front();     // remove from queue since no handler is defined
+
+
         return; 
       } else {
         ESP_LOGW(TAG, "Could not match any register to address %02X. Sending exception response.", current_address);

@@ -319,8 +319,17 @@ async def to_code(config):
 
 
 async def register_modbus_device(var, config):
+#    from esphome.components.modbus_controller.const import CONF_MODBUS_CONTROLLER_ID
     cg.add(var.set_address(config[CONF_ADDRESS]))
     await cg.register_component(var, config)
+    _LOGGER.info(
+#        "Modbus device registered with address: %s, Modbus ID: %s, Modbus controller ID: %s",
+#        "Modbus device registered with address: %s, Modbus controller ID: %s",
+        "Modbus device registered with address: %s",
+        config[CONF_ADDRESS],
+#        config[CONF_MODBUS_ID],
+#        config[CONF_MODBUS_CONTROLLER_ID],
+    )
     return await modbus.register_modbus_device(var, config)
 
 

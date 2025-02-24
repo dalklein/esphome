@@ -122,30 +122,44 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
       if (this->disable_crc_) {
         ESP_LOGD(TAG, "Modbus CRC Check failed, but ignored! %02X!=%02X", computed_crc, remote_crc);
       } else {
-        // ESP_LOGW(TAG, "Modbus CRC Check fail! %02X!=%02X", computed_crc, remote_crc);
-        // std::string raw_bytes;
-        // for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
-        //     char hex[4];
-        //     snprintf(hex, sizeof(hex), "%02X ", this->rx_buffer_[i]);
-        //     raw_bytes += hex;
-        // }
-        // if(this->role == ModbusRole::SERVER){
-        //   ESP_LOGW(TAG, "SERVER Failed CRC msg:    %s", raw_bytes.c_str()); 
-        // } else {
-        //   ESP_LOGW(TAG, "  CLIENT Failed CRC msg:    %s", raw_bytes.c_str());         
-        // }
+        ESP_LOGW(TAG, "Modbus CRC Check fail! %02X!=%02X", computed_crc, remote_crc);
+        std::string raw_bytes;
+        for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
+            char hex[4];
+            snprintf(hex, sizeof(hex), "%02X ", this->rx_buffer_[i]);
+            raw_bytes += hex;
+        }
+        if(this->role == ModbusRole::SERVER){
+          ESP_LOGW(TAG, "SERVER Failed CRC msg:    %s", raw_bytes.c_str()); 
+        } else {
+          ESP_LOGW(TAG, "  CLIENT Failed CRC msg:    %s", raw_bytes.c_str());         
+        }
         return false;
       }
     }
   }
   std::vector<uint8_t> data(this->rx_buffer_.begin() + data_offset, this->rx_buffer_.begin() + data_offset + data_len);
-//  std::string device_list;         //  expect this should have all the devices from .yaml
-//  for (auto *device : this->devices_) {
-//    char hex[4];
-//    snprintf(hex, sizeof(hex), "%02X ", device->address_);
-//    device_list += hex;
-//    ESP_LOGW(TAG, "Modbus device list:    %s", device_list.c_str());
-//  }
+  std::string device_list;         //  expect this should have all the devices from .yaml
+  for (auto *device : this->devices_) {
+    char hex[4];
+    snprintf(hex, sizeof(hex), "%02X ", device->address_);
+    device_list += hex;
+    device_list += " ";
+//    switch (device->role_) {
+    switch (this->role) {
+      case ModbusRole::CLIENT:
+        device_list += "CLIENT";
+        break;
+      case ModbusRole::SERVER:
+        device_list += "SERVER";
+        break;
+      case ModbusRole::MUTE_CLIENT:
+        device_list += "MUTE_CLIENT";
+        break;
+    }
+    device_list += " ";
+  }
+  ESP_LOGW(TAG, "Modbus device list:    %s", device_list.c_str());
 
   bool found = false;
   for (auto *device : this->devices_) {
@@ -173,7 +187,7 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
       //   device->on_modbus_read_registers_mute(function_code, uint16_t(data[1]) | (uint16_t(data[0]) << 8),
       //                                    uint16_t(data[3]) | (uint16_t(data[2]) << 8));
       } else if (this->role == ModbusRole::SERVER && (function_code == 0x3 || function_code == 0x4)) {
-//        ESP_LOGW(TAG, "SERVER read registers for address 0x%02X! ", address);
+  //      ESP_LOGW(TAG, "SERVER read registers for address %02X! ", address);
         device->on_modbus_read_registers(function_code, uint16_t(data[1]) | (uint16_t(data[0]) << 8),
                                          uint16_t(data[3]) | (uint16_t(data[2]) << 8));
       } else {

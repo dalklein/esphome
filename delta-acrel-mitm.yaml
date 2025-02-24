@@ -1,0 +1,914 @@
+esphome:
+  name: delta-acrel-mitm
+  friendly_name: Delta Meter
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: WARN
+#  level: VERBOSE
+  baud_rate: 0
+
+mqtt:
+  broker: 192.168.15.15
+  port: 1883
+  topic_prefix: "delta/inv"
+  on_disconnect:
+    - logger.log: "MQTT broker not available, continuing execution."
+
+# Enable Home Assistant API
+#api:
+#  password: "igeruja8"
+
+ota:
+  - platform: esphome
+    password: "igeruja8"
+
+wifi:
+  networks:
+  - ssid: "intothe"
+    password: "transporter1999"
+  - ssid: "intotheg"
+    password: "transporter1999"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Delta Meter Fallback Hotspot"
+    password: "igeruja8"
+
+captive_portal:
+
+sensor:
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_PhA_N_Voltage
+    internal: true
+    address: 40008
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: power
+    state_class: measurement
+    skip_updates: 10
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_PhB_N_Voltage
+    internal: true
+    address: 40009
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: power
+    state_class: measurement
+    skip_updates: 10
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_PhC_N_Voltage
+    internal: true
+    address: 40010
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: power
+    state_class: measurement
+    skip_updates: 10
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_LL_Voltage
+    internal: true
+    address: 40011
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: power
+    state_class: measurement
+    skip_updates: 10
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_freq
+    internal: true
+    address: 40016
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: "Hz"
+    device_class: power
+    state_class: measurement
+    skip_updates: 3
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_total_real_power
+    internal: true
+    address: 40018
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: "W"  
+    device_class: power
+    state_class: measurement
+    on_value:
+      then:
+        - lambda: |-
+            if (id(delta_ctrl_mode).state == 0) { 
+              int16_t power_value = (id(meter_total_real_power).state) * id(delta_ctrl_gain).state + id(processed_delta_gt_meter_adjust).state;
+              id(adjusted_meter_power).publish_state(power_value);  // Update the adjusted meter power sensor
+            }
+        - mqtt.publish:
+            topic: "delta/inv/sensor/meter_total_real_power/state"
+            payload: !lambda |-
+              int16_t mtrp_value = id(meter_total_real_power).state;
+              return String(mtrp_value).c_str();
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_power_ph_a
+    internal: true
+    address: 40019
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_power_ph_b
+    internal: true
+    address: 40020
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_power_ph_c
+    internal: true
+    address: 40021
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_real_power_scale_factor
+    internal: true
+    address: 40022
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: ""
+    device_class: power
+    state_class: measurement
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_power_factor
+    internal: true
+    address: 40033
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: ""
+    device_class: power
+    state_class: measurement
+    skip_updates: 2
+    on_value:
+      then:   
+        - mqtt.publish:
+            topic: "delta/inv/sensor/meter_power_factor/state"
+            payload: !lambda |-
+              float mtrp_value = id(meter_power_factor).state*.001;
+              char buffer[20];
+              snprintf(buffer, sizeof(buffer), "%.3g", mtrp_value);
+              return String(buffer).c_str();       
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_TotWh_Exp
+    internal: true
+    address: 40038
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 98
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_TotWhPhA_Exp
+    internal: true
+    address: 40040
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 98
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_TotWhPhB_Exp
+    internal: true
+    address: 40042
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 98
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_TotWh_Imp
+    internal: true
+    address: 40046
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 99
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_TotWh_ImpPhA
+    internal: true
+    address: 40048
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 99
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_TotWh_ImpPhB
+    internal: true
+    address: 40050
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 99
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAh_Exp
+    internal: true
+    address: 40055
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 97
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAh_ExpPhA
+    internal: true
+    address: 40057
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 97
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAh_ExpPhB
+    internal: true
+    address: 40059
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 97
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAh_Imp
+    internal: true
+    address: 40063
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 97
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAh_ImpPhA
+    internal: true
+    address: 40065
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 97
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAh_ImpPhB
+    internal: true
+    address: 40067
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Wh"
+    device_class: power
+    state_class: measurement
+    skip_updates: 97
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAh_scale_factor
+    internal: true
+    address: 40071
+    register_type: read
+    value_type: S_WORD
+    unit_of_measurement: ""
+    device_class: power
+    state_class: measurement
+    skip_updates: 97
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ1
+    internal: true
+    address: 40072
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 98
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ1PhA
+    internal: true
+    address: 40074
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 98
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ1PhB
+    internal: true
+    address: 40076
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 98
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ1PhC
+    internal: true
+    address: 40078
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 98
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ2
+    internal: true
+    address: 40080
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 99
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ2PhA
+    internal: true
+    address: 40082
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 99
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ2PhB
+    internal: true
+    address: 40084
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 99
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ2PhC
+    internal: true
+    address: 40086
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 99
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ3
+    internal: true
+    address: 40088
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 100
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ3PhA
+    internal: true
+    address: 40090
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 100
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_VAHrs_ImpQ3PhB
+    internal: true
+    address: 40092
+    register_type: read
+    value_type: S_DWORD
+    unit_of_measurement: "Vah"
+    device_class: power
+    state_class: measurement
+    skip_updates: 100
+
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_barcode_a
+    internal: true
+    address: 40117
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: ""
+    device_class: power
+    state_class: measurement
+    skip_updates: 101
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_barcode_b
+    internal: true
+    address: 40118
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: ""
+    device_class: power
+    state_class: measurement
+    skip_updates: 101
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_barcode_c
+    internal: true
+    address: 40119
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: ""
+    device_class: power
+    state_class: measurement
+    skip_updates: 101
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_version
+    internal: true
+    address: 40120
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: ""
+    device_class: power
+    state_class: measurement
+    skip_updates: 101
+  - platform: modbus_controller
+    modbus_controller_id: meter_client
+    id: meter_sw_id_num
+    internal: true
+    address: 40121
+    register_type: read
+    value_type: U_WORD
+    unit_of_measurement: ""
+    device_class: power
+    state_class: measurement
+    skip_updates: 101
+
+  - platform: mqtt_subscribe
+    id: delta_gt_meter_adjust
+    name: "Delta Meter Adjustment"
+    topic: "cmnd/delta-gt-meter/adjust_pwr"
+
+  - platform: mqtt_subscribe
+    id: raw_delta_ctrl_mode
+    name: "RawDelta Control Mode"
+    topic: "cmnd/delta-gt-meter/ctrl_mode"
+# 0 - normal meter operation (inverter self-consumption), 1 - disable meter, charge battery from direct PV only
+
+  - platform: mqtt_subscribe
+    id: raw_delta_ctrl_gain
+    name: "RawDelta Control Gain"
+    topic: "cmnd/delta-gt-meter/ctrl_gain"
+# 1 - normal gain
+
+  - platform: template
+    id: delta_ctrl_mode
+    name: "Delta Control Mode"
+    lambda: |-
+      if (id(raw_delta_ctrl_mode).state == NAN) {
+        return 0;  // Use 0 if delta_ctrl_mode is not published
+      }
+      return id(raw_delta_ctrl_mode).state;  // Return the state if valid
+
+  - platform: template
+    id: delta_ctrl_gain
+    name: "Delta Control Gain"
+    lambda: |-
+      if (id(raw_delta_ctrl_gain).state == NAN) {
+        return 1.0;  // Use 1 if delta_ctrl_gain is not published
+      }
+      return id(raw_delta_ctrl_gain).state;  // Return the state if valid
+
+  - platform: template
+    id: processed_delta_gt_meter_adjust
+    name: "Processed Delta Meter Adjustment"
+    lambda: |-
+      if (id(delta_gt_meter_adjust).state == NAN) {
+        return 0;  // Initialize to 0 if no value
+      }
+      return id(delta_gt_meter_adjust).state;  // Return the state if valid
+
+  - platform: template
+    id: processed_delta_gt_meter_adjust_half
+    name: "Processed Delta Meter Adjustment Half"
+    lambda: |-
+      float adjustment = id(processed_delta_gt_meter_adjust).state;
+      return adjustment == NAN ? 0 : adjustment / 2;  // Initialize to 0 if no value
+
+  - platform: template
+    id: filt_meter_total_real_power
+    name: "Filtered Meter Total Real Power"
+    lambda: |-
+      float latest_trp = id(meter_total_real_power).state;  // Latest read value
+      float new_state =  1.0 * latest_trp;  
+      return static_cast<int16_t>(new_state);  // Return as signed 16-bit integer
+
+  - platform: template
+    id: adjusted_meter_power
+    name: "Adjusted Meter Power"
+
+  - platform: template
+    id: adjusted_power_ph_a
+    name: "Adjusted Power Phase A"
+
+  - platform: template
+    id: adjusted_power_ph_b
+    name: "Adjusted Power Phase B"
+
+  # - platform: modbus_controller
+  #   modbus_controller_id: batt_mute_client
+  #   id: lg_110
+  #   internal: true
+  #   address: 110
+  #   register_type: read
+  #   value_type: U_WORD
+  #   unit_of_measurement: ""
+  #   device_class: power
+  #   state_class: measurement
+  #   skip_updates: 1001
+  #   on_value:
+  #     then:
+  #       - mqtt.publish:
+  #           topic: "delta/inv/lg/110/state"
+  #           payload: !lambda |-
+  #             int value = id(lg_110).state;
+  #             return String(value).c_str();
+  # - platform: modbus_controller
+  #   modbus_controller_id: batt_mute_client
+  #   id: lg_111
+  #   internal: true
+  #   address: 111
+  #   register_type: read
+  #   value_type: U_WORD
+  #   unit_of_measurement: ""
+  #   device_class: power
+  #   state_class: measurement
+  #   skip_updates: 1001
+  #   on_value:
+  #     then:
+  #       - mqtt.publish:
+  #           topic: "delta/inv/lg/111/state"
+  #           payload: !lambda |-
+  #             int value = id(lg_111).state;
+  #             return String(value).c_str();
+
+uart:
+  - id: moduart_client     # cross rx/tx lines from ESP to ttl-rs485
+    tx_pin: GPIO16   # connected to tx pin on ttl-rs485, labelled rx pin on ESP
+    rx_pin: GPIO17   # meter(server), ESP meter client on this bus
+    baud_rate: 9600
+    stop_bits: 1
+    data_bits: 8
+    parity: NONE
+
+  - id: moduart_inverter  # also mute_client for battery. cross rx/tx from ESP to ttl-rs485
+    tx_pin: GPIO18   # connected to tx pin on ttl-rs485, labelled rx pin on ESP
+    rx_pin: GPIO19   # ESP fake meter(server), inverter(client), battery on this bus
+    baud_rate: 9600
+    stop_bits: 1
+    data_bits: 8
+    parity: NONE
+  
+modbus:
+  - uart_id: moduart_client  # meter -- MITM meter client
+    id: modbus_meter_client
+    role: client
+  - uart_id: moduart_inverter  # battery -- inverter -- MITM fake meter server
+    id: modbus_inverter
+    role: server
+#  - uart_id: moduart_inverter  # battery mute client - store batt response data 
+#    id: modbus_battery         
+#    role: mute_client
+  # - uart_id: moduart_inverter  # battery mute server - observe inverter requests to battery
+  #   id: modbus_batt_server
+  #   role: server
+
+modbus_controller:
+  - id: batt_mute_client  # observe inverter requests, parse battery response
+    address: 0x0F  # address of the LG battery
+    modbus_id: modbus_inverter # on the batt/inv bus
+    setup_priority: -10
+  - id: meter_client
+    address: 0x02  # address of the meter - Acrel AGF-AE-D
+    modbus_id: modbus_meter_client
+    command_throttle: 100ms
+    setup_priority: -10
+    update_interval: .7s
+  - id: modbus_controller_server
+    address: 0x02  # fake meter server needs id#2 as the Delta Ex-TL-US inverter expects
+    modbus_id: modbus_inverter
+    command_throttle: 100ms
+    setup_priority: -10
+    server_registers:
+      - address: 40001   # Fixed integer value Sunspec length, inverter checking for meter type?
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return 105;  
+      - address: 40002   # est current from adj power and voltage, both A & V are .1 scaling 
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return static_cast<int16_t>(static_cast<float>(id(adjusted_meter_power).state) / id(meter_LL_Voltage).state);   
+      - address: 40003   # estimate current from power
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return static_cast<int16_t>(static_cast<float>(id(adjusted_power_ph_a).state) / id(meter_PhA_N_Voltage).state);   
+      - address: 40004   # estimate current from power
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return static_cast<int16_t>(static_cast<float>(id(adjusted_power_ph_b).state) / id(meter_PhB_N_Voltage).state);   
+      - address: 40008
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_PhA_N_Voltage).state;
+      - address: 40009
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_PhB_N_Voltage).state;
+      - address: 40010
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_PhC_N_Voltage).state;
+      - address: 40011
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_LL_Voltage).state;
+      - address: 40016
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_freq).state;
+
+      - address: 40018  # adjusted with mqtt offset & gain, delay if meter_disable = true prevents inverter closed loop control
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { 
+            delay(2000); 
+            return 0; }
+          return id(adjusted_meter_power).state;
+      - address: 40019  
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          int16_t power_a_value = (id(meter_power_ph_a).state) * id(delta_ctrl_gain).state + id(processed_delta_gt_meter_adjust_half).state;
+          return power_a_value;
+      - address: 40020
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          int16_t power_b_value = (id(meter_power_ph_b).state) * id(delta_ctrl_gain).state + id(processed_delta_gt_meter_adjust_half).state;
+          return power_b_value;
+      - address: 40021
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_power_ph_c).state;
+      - address: 40022
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_real_power_scale_factor).state;
+
+      - address: 40033
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_power_factor).state;
+      - address: 40038
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_TotWh_Exp).state;
+      - address: 40040
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_TotWhPhA_Exp).state;
+      - address: 40042
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_TotWhPhB_Exp).state;
+      - address: 40046
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_TotWh_Imp).state;
+      - address: 40048
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_TotWh_ImpPhA).state;
+      - address: 40050
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_TotWh_ImpPhB).state;
+
+      - address: 40055
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAh_Exp).state;
+      - address: 40057
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAh_ExpPhA).state;
+      - address: 40059
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAh_ExpPhB).state;
+      - address: 40063
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAh_Imp).state;
+      - address: 40065
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAh_ImpPhA).state;
+      - address: 40067
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAh_ImpPhB).state;
+      - address: 40071
+        value_type: S_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAh_scale_factor).state;
+
+      - address: 40072
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ1).state;
+      - address: 40074
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ1PhA).state;
+      - address: 40076
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ1PhB).state;
+      - address: 40078
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ1PhC).state;
+      - address: 40080
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ2).state;
+      - address: 40082
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ2PhA).state;
+      - address: 40084
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ2PhB).state;
+      - address: 40086
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ2PhC).state;
+      - address: 40088
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ3).state;
+      - address: 40090
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ3PhA).state;
+      - address: 40092
+        value_type: S_DWORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_VAHrs_ImpQ3PhB).state;
+
+      - address: 40117
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_barcode_a).state;
+      - address: 40118
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_barcode_b).state;
+      - address: 40119
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_barcode_c).state;
+      - address: 40120
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_version).state;
+      - address: 40121
+        value_type: U_WORD
+        read_lambda: |-
+          if (id(delta_ctrl_mode).state == 1) { return 0; }
+          return id(meter_sw_id_num).state;   
+          
+
+
+
+    

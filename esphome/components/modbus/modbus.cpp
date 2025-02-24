@@ -89,7 +89,7 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
 
   } else {
     // data starts at 2 and length is 4 for read registers commands
-    if (this->role == ModbusRole::SERVER && (function_code == 0x3 || function_code == 0x4)) {
+    if ((this->role == ModbusRole::SERVER || this->role == ModbusRole::MUTE_CLIENT) && (function_code == 0x3 || function_code == 0x4)) {
       data_offset = 2;
       data_len = 4;
     }
@@ -122,25 +122,32 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
       if (this->disable_crc_) {
         ESP_LOGD(TAG, "Modbus CRC Check failed, but ignored! %02X!=%02X", computed_crc, remote_crc);
       } else {
-        ESP_LOGW(TAG, "Modbus CRC Check fail! %02X!=%02X", computed_crc, remote_crc);
-        std::string raw_bytes;
-        for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
-            char hex[4];
-            snprintf(hex, sizeof(hex), "%02X ", this->rx_buffer_[i]);
-            raw_bytes += hex;
-        }
-        if(this->role == ModbusRole::SERVER){
-          ESP_LOGW(TAG, "SERVER Failed CRC msg:    %s", raw_bytes.c_str()); 
-        } else {
-          ESP_LOGW(TAG, "  CLIENT Failed CRC msg:    %s", raw_bytes.c_str());         
-        }
+        // ESP_LOGW(TAG, "Modbus CRC Check fail! %02X!=%02X", computed_crc, remote_crc);
+        // std::string raw_bytes;
+        // for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
+        //     char hex[4];
+        //     snprintf(hex, sizeof(hex), "%02X ", this->rx_buffer_[i]);
+        //     raw_bytes += hex;
+        // }
+        // if(this->role == ModbusRole::SERVER){
+        //   ESP_LOGW(TAG, "SERVER Failed CRC msg:    %s", raw_bytes.c_str()); 
+        // } else {
+        //   ESP_LOGW(TAG, "  CLIENT Failed CRC msg:    %s", raw_bytes.c_str());         
+        // }
         return false;
       }
     }
   }
   std::vector<uint8_t> data(this->rx_buffer_.begin() + data_offset, this->rx_buffer_.begin() + data_offset + data_len);
+//  std::string device_list;         //  expect this should have all the devices from .yaml
+//  for (auto *device : this->devices_) {
+//    char hex[4];
+//    snprintf(hex, sizeof(hex), "%02X ", device->address_);
+//    device_list += hex;
+//    ESP_LOGW(TAG, "Modbus device list:    %s", device_list.c_str());
+//  }
+
   bool found = false;
-  bool mute_client = false;
   for (auto *device : this->devices_) {
     if (device->address_ == address) {
       // Is it an error response?
@@ -152,14 +159,22 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
           // Ignore modbus exception not related to a pending command
           ESP_LOGD(TAG, "Ignoring Modbus error - not expecting a response");
         }
+      // } else if (address == 0x0F && (function_code == 0x3 || function_code == 0x04)) {
+      //   // even hardcoding 0F here doesn't work, this->devices only has Server/client w/ addr 0x02
+      //   //  not sure why, or how to fix 
+      //   //   todo:  if addr is for a MUTE_CLIENT,      this->role == ModbusRole::MUTE_CLIENT
+      //   //      need to have a list of addresses and device roles, and call this
+      //   //      if the address is for a MUTE_CLIENT.   for now, hard code for my particular case.    
+      //   // new function similar to on_modbus_read_registers(), for MUTE_CLIENT
+      //   //   see what registers are requested, and load them into client queue
+      //   //  if they are used in sensors by the mute_client, and next modbus message
+      //   // will be handled as a normal client with on_modbus_data()
+      //   ESP_LOGW(TAG, "MUTE_CLIENT read registers for address 0x%02X! ", address);
+      //   device->on_modbus_read_registers_mute(function_code, uint16_t(data[1]) | (uint16_t(data[0]) << 8),
+      //                                    uint16_t(data[3]) | (uint16_t(data[2]) << 8));
       } else if (this->role == ModbusRole::SERVER && (function_code == 0x3 || function_code == 0x4)) {
+//        ESP_LOGW(TAG, "SERVER read registers for address 0x%02X! ", address);
         device->on_modbus_read_registers(function_code, uint16_t(data[1]) | (uint16_t(data[0]) << 8),
-                                         uint16_t(data[3]) | (uint16_t(data[2]) << 8));
-      } else if (this->role == ModbusRole::MUTE_CLIENT && (function_code == 0x3 || function_code == 0x04)) {
-        // new function similar to on_modbus_read_registers(), for MUTE_CLIENT
-        //   see what registers are requested, and load them into client queue
-        //  if they are used in sensors by the mute_client
-        device->on_modbus_read_registers_mute(function_code, uint16_t(data[1]) | (uint16_t(data[0]) << 8),
                                          uint16_t(data[3]) | (uint16_t(data[2]) << 8));
       } else {
         device->on_modbus_data(data);
@@ -180,7 +195,10 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
             raw_bytes += hex;
         }
         ESP_LOGW(TAG, "Batt1:    %s", raw_bytes.c_str()); 
+
+
     }
+
   }
 
   // reset buffer

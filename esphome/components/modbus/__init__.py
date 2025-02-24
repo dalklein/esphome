@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Literal
+import logging
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
@@ -11,9 +12,11 @@ from esphome.const import (
     CONF_ID,
     CONF_ADDRESS,
     CONF_DISABLE_CRC,
+    CONF_UART_ID,  # Add this line
 )
 from esphome import pins
 
+_LOGGER = logging.getLogger("esphome.components.modbus")
 DEPENDENCIES = ["uart"]
 
 modbus_ns = cg.esphome_ns.namespace("modbus")
@@ -64,6 +67,15 @@ async def to_code(config):
     cg.add(var.set_send_wait_time(config[CONF_SEND_WAIT_TIME]))
     cg.add(var.set_disable_crc(config[CONF_DISABLE_CRC]))
 
+    _LOGGER.info(
+#        "Adding Modbus device with id: %s, address: %s, role: %s, uart: %s",
+        "Adding Modbus device with id: %s, role: %s, uart: %s",
+        config[CONF_ID],
+#        config[CONF_ADDRESS],
+        config[CONF_ROLE],
+        config[CONF_UART_ID],
+    )
+
 
 def modbus_device_schema(default_address):
     schema = {
@@ -103,3 +115,12 @@ async def register_modbus_device(var, config):
     cg.add(var.set_parent(parent))
     cg.add(var.set_address(config[CONF_ADDRESS]))
     cg.add(parent.register_device(var))
+    # role = config.get(CONF_ROLE)
+    # if role is None:
+    #     role = "unknown"
+    # _LOGGER.info(
+    #     "Modbus device registered with address: %s and role: %s",
+    #     config[CONF_ADDRESS],
+    #     role,
+    # )
+

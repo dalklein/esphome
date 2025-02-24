@@ -134,7 +134,8 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
                 // Check if the device id is 0x0F before exception response, 
       if (address_ == 0x0F ) {
         ESP_LOGW(TAG, "No reg. match for ID: %02X, reg: %02X, reg. start: %02X, no. regs.: %02X, .", address_, current_address,start_address,number_of_registers);
-        return; // true;
+// put these registers in the waiting for response queue for the mute client
+        return; 
       } else {
         ESP_LOGW(TAG, "Could not match any register to address %02X. Sending exception response.", current_address);
         std::vector<uint8_t> error_response;
@@ -142,24 +143,24 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
         error_response.push_back(0x81);
         error_response.push_back(0x02);
         this->send_raw(error_response);
-        return; // false;
+        return; 
       }
     }
-    // return false;
   }
-    //  check here if address is 0x0F, put request registers into client queue
-    //     so that response data will be processed like normal client,
-    //   and _don't_ send out the response message like for a normal server.
-    //  if all registers in the request are matched, then decode the response data
-  std::vector<uint8_t> response;
-  for (auto v : sixteen_bit_response) {
-    auto decoded_value = decode_value(v);
-    response.push_back(decoded_value[0]);
-    response.push_back(decoded_value[1]);
+
+  if (address_ == 0x0F ) {
+    ESP_LOGW(TAG, "don't send response for ID: %02X, reg: %02X, reg. start: %02X, no. regs.: %02X, .", address_, start_address,start_address,number_of_registers);
+  } else {
+      // assemble the register response data
+    std::vector<uint8_t> response;
+    for (auto v : sixteen_bit_response) {
+      auto decoded_value = decode_value(v);
+      response.push_back(decoded_value[0]);
+      response.push_back(decoded_value[1]);
+    }
+      //  and send server response out,  send() calls send_raw() and does the CRC
+    this->send(function_code, start_address, number_of_registers, response.size(), response.data());
   }
-     //  and send server response out,  send() calls send_raw() and does the CRC
-  this->send(function_code, start_address, number_of_registers, response.size(), response.data());
-//  return false;
 }
 
 void ModbusController::on_modbus_read_registers_mute(uint8_t function_code, uint16_t start_address,
@@ -191,7 +192,8 @@ void ModbusController::on_modbus_read_registers_mute(uint8_t function_code, uint
                 // Check if the device id is 0x0F before exception response, 
       if (address_ == 0x0F ) {
         ESP_LOGW(TAG, "No reg. match for ID: %02X, reg: %02X, reg. start: %02X, no. regs.: %02X, .", address_, current_address,start_address,number_of_registers);
-        return; // true;
+// callback         modbusdevice->on_register_data(register_type, start_address, data);
+        return; 
       } else {
         ESP_LOGW(TAG, "Could not match any register to address %02X. Sending exception response.", current_address);
         std::vector<uint8_t> error_response;
@@ -199,24 +201,11 @@ void ModbusController::on_modbus_read_registers_mute(uint8_t function_code, uint
         error_response.push_back(0x81);
         error_response.push_back(0x02);
         this->send_raw(error_response);
-        return; // false;
+        return; 
       }
     }
-    // return false;
   }
-    //  check here if address is 0x0F, put request registers into client queue
-    //     so that response data will be processed like normal client,
-    //   and _don't_ send out the response message like for a normal server.
-    //  if all registers in the request are matched, then decode the response data
-  std::vector<uint8_t> response;
-  for (auto v : sixteen_bit_response) {
-    auto decoded_value = decode_value(v);
-    response.push_back(decoded_value[0]);
-    response.push_back(decoded_value[1]);
-  }
-     //  and send server response out,  send() calls send_raw() and does the CRC
-  this->send(function_code, start_address, number_of_registers, response.size(), response.data());
-//  return false;
+
 }
 
 SensorSet ModbusController::find_sensors_(ModbusRegisterType register_type, uint16_t start_address) const {
@@ -626,6 +615,12 @@ ModbusCommandItem ModbusCommandItem::create_custom_command(
 }
 
 bool ModbusCommandItem::send() {
+  if (modbusdevice->get_address() == 15) {   // mute_client for battery
+    return true;   // always return true, but not used
+  }
+  // ESP_LOGW(TAG, "Command sending %d 0x%X %d address: %d send_count: %d", uint8_t(this->function_code),
+  //          this->register_address, this->register_count, modbusdevice->get_address(), this->send_count_);
+
   if (this->function_code != ModbusFunctionCode::CUSTOM) {
     modbusdevice->send(uint8_t(this->function_code), this->register_address, this->register_count, this->payload.size(),
                        this->payload.empty() ? nullptr : &this->payload[0]);
@@ -633,9 +628,9 @@ bool ModbusCommandItem::send() {
     modbusdevice->send_raw(this->payload);
   }
   this->send_count_++;
-  ESP_LOGV(TAG, "Command sent %d 0x%X %d send_count: %d", uint8_t(this->function_code), this->register_address,
-           this->register_count, this->send_count_);
-  return true;
+  ESP_LOGV(TAG, "Command sent %d 0x%X %d address: %d send_count: %d", uint8_t(this->function_code),
+           this->register_address, this->register_count, modbusdevice->get_address(), this->send_count_);
+  return true;   // always return true, but not used
 }
 
 bool ModbusCommandItem::is_equal(const ModbusCommandItem &other) {

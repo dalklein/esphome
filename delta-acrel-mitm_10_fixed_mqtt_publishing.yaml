@@ -14,7 +14,7 @@ logger:
   baud_rate: 0
 
 mqtt:
-  broker: 192.168.15.15
+  broker: !secret mqtt_broker_ip
   port: 1883
   topic_prefix: "delta/inv"
   on_disconnect:
@@ -26,19 +26,19 @@ mqtt:
 
 ota:
   - platform: esphome
-    password: "igeruja8"
+    password: !secret ota_password
 
 wifi:
   networks:
-  - ssid: "intothe"
-    password: "transporter1999"
-  - ssid: "intotheg"
-    password: "transporter1999"
+  - ssid: !secret wifi_ssid_g
+    password: !secret wifi_password
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Delta Meter Fallback Hotspot"
-    password: "igeruja8"
+    password: !secret ap_password
 
 captive_portal:
 

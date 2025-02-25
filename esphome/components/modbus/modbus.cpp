@@ -233,7 +233,7 @@ float Modbus::get_setup_priority() const {
 }
 
 void Modbus::send(uint8_t address, uint8_t function_code, uint16_t start_address, uint16_t number_of_entities,
-                  uint8_t payload_len, const uint8_t *payload) {
+                  uint8_t payload_len, const uint8_t *payload, bool disable_send) {
   static const size_t MAX_VALUES = 128;
 
   // Only check max number of registers for standard function codes
@@ -285,7 +285,7 @@ void Modbus::send(uint8_t address, uint8_t function_code, uint16_t start_address
 
 // Helper function for lambdas
 // Send raw command. Except CRC everything must be contained in payload
-void Modbus::send_raw(const std::vector<uint8_t> &payload) {
+void Modbus::send_raw(const std::vector<uint8_t> &payload, bool disable_send) {
   if (payload.empty()) {
     return;
   }
@@ -294,10 +294,12 @@ void Modbus::send_raw(const std::vector<uint8_t> &payload) {
     this->flow_control_pin_->digital_write(true);
 
   auto crc = crc16(payload.data(), payload.size());
-  this->write_array(payload);
-  this->write_byte(crc & 0xFF);
-  this->write_byte((crc >> 8) & 0xFF);
-  this->flush();
+  if (not disable_send)  {
+    this->write_array(payload);
+    this->write_byte(crc & 0xFF);
+    this->write_byte((crc >> 8) & 0xFF);
+    //this->flush();
+  }
   if (this->flow_control_pin_ != nullptr)
     this->flow_control_pin_->digital_write(false);
   waiting_for_response = payload[0];

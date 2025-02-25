@@ -14,7 +14,7 @@ logger:
   baud_rate: 0
 
 mqtt:
-  broker: 192.168.15.15
+  broker: !secret mqtt_broker_ip
   port: 1883
   topic_prefix: "delta/inv"
   on_disconnect:
@@ -26,19 +26,19 @@ mqtt:
 
 ota:
   - platform: esphome
-    password: "igeruja8"
+    password: !secret ota_password
 
 wifi:
   networks:
-  - ssid: "intothe"
-    password: "transporter1999"
-  - ssid: "intotheg"
-    password: "transporter1999"
+  - ssid: !secret wifi_ssid_g
+    password: !secret wifi_password
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Delta Meter Fallback Hotspot"
-    password: "igeruja8"
+    password: !secret ap_password
 
 captive_portal:
 
@@ -631,7 +631,7 @@ sensor:
   #             return String(value).c_str();
 
 uart:
-  - id: moduart_client     # cross rx/tx lines from ESP to ttl-rs485
+  - id: moduart_meter     # cross rx/tx lines from ESP to ttl-rs485
     tx_pin: GPIO16   # connected to tx pin on ttl-rs485, labelled rx pin on ESP
     rx_pin: GPIO17   # meter(server), ESP meter client on this bus
     baud_rate: 9600
@@ -648,7 +648,7 @@ uart:
     parity: NONE
   
 modbus:
-  - uart_id: moduart_client  # meter -- MITM meter client
+  - uart_id: moduart_meter  # meter -- MITM meter client
     id: modbus_meter_client
     role: client
   - uart_id: moduart_inverter  # battery -- inverter -- MITM fake meter server
@@ -667,14 +667,14 @@ modbus_controller:
     modbus_id: modbus_inverter # on the batt/inv bus
     setup_priority: -10
   - id: meter_client
-    address: 0x02  # address of the meter - Acrel AGF-AE-D
+    address: 0x02  # address of meter to query
     modbus_id: modbus_meter_client
     command_throttle: 100ms
     setup_priority: -10
     update_interval: .7s
-  - id: modbus_controller_server
+  - id: fake_meter_server
     address: 0x02  # fake meter server needs id#2 as the Delta Ex-TL-US inverter expects
-    modbus_id: modbus_inverter
+    modbus_id: modbus_inverter # on the batt/inv bus
     command_throttle: 100ms
     setup_priority: -10
     server_registers:

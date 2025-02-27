@@ -42,7 +42,7 @@ bool ModbusController::send_next_command_() {
     } else {
       ESP_LOGV(TAG, "Sending next modbus command to device %d register 0x%02X count %d", this->address_,
                command->register_address, command->register_count);
-      command->send();
+      command->send(this->disable_send_);
 
       this->last_command_timestamp_ = millis();
 
@@ -55,6 +55,38 @@ bool ModbusController::send_next_command_() {
     }
   }
   return (!this->command_queue_.empty());
+}
+
+void ModbusController::on_modbus_data(bool is_response,uint8_t address,uint8_t function_code, 
+      uint16_t start_address,uint16_t number_of_registers,uint16_t crc,const std::vector<uint8_t> &data) {
+//  ESP_LOGW(TAG, "on_modbus_data: is_response: %d address: 0x%02X function_code: 0x%02X start_address: 0x%02X number_of_registers: 0x%02X crc: 0x%02X data size: %d. Disable send: %d", disable_send_);
+  ESP_LOGW(TAG, "disable_send_ %d,  device->get_disable_send() %d", disable_send_, this->get_disable_send());
+
+  if (disable_send_) {
+    static uint16_t staticcounter=0;
+      update_range_(register_ranges_.front());
+      send_next_command_();
+      //update sensor metadata
+   for (auto *sensor : this->sensorset_) {
+    //sensor->parse_and_publish(data);
+        sensor->is_response_in=is_response;
+        sensor->address_in=address;
+        sensor->crc_in=crc;
+        sensor->function_code_in=function_code;
+        sensor->start_reg_in=start_address;
+        sensor->num_reg_in=number_of_registers;
+        int start_offset = start_address-sensor->start_address;
+        if ((start_address >= sensor->start_address) &&  ((start_address+number_of_registers) <= (sensor->start_address+sensor->register_count))) {
+          ESP_LOGD(TAG, "**Fn: 0x%X A:0x%X #:%d S A:0x%x #:%d off:%d  :%x", function_code,start_address,number_of_registers,sensor->start_address,sensor->register_count,start_offset,
+          sensor->glo_registers_); 
+
+          for (int i=0;i<number_of_registers;i++)  {
+            (*sensor->glo_registers_)[i+start_offset]=((uint16_t)data[2*i+1]) | (((uint16_t)data[2*i]) << 8);
+          }
+        }
+    }
+  }
+  on_modbus_data(data);
 }
 
 // Queue incoming response
@@ -113,11 +145,15 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
            this->address_, function_code, start_address, number_of_registers);
 
   std::vector<uint16_t> sixteen_bit_response;
+  ServerRegister *server_register_out=nullptr; //maintain scope outside of loop
+  uint16_t start_offset=0;
+
   for (uint16_t current_address = start_address; current_address < start_address + number_of_registers;) {
     bool found = false;
     for (auto *server_register : this->server_registers_) {
       if (server_register->address == current_address) {
-        float value = server_register->read_lambda();
+        std::vector<uint16_t> registers;                //  dfk TODO see pcr20
+        float value = server_register->read_lambda(registers);
 
         ESP_LOGD(TAG, "Matched register. Address: 0x%02X. Value type: %zu. Register count: %u. Value: %0.1f.",
                  server_register->address, static_cast<uint8_t>(server_register->value_type),
@@ -126,6 +162,8 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
         sixteen_bit_response.insert(sixteen_bit_response.end(), payload.cbegin(), payload.cend());
         current_address += server_register->register_count;
         found = true;
+        server_register_out=server_register;
+        start_offset= start_address-server_register->address;
         break;
       }
     }
@@ -134,22 +172,6 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
                 // Check if the device id is 0x0F before exception response, 
       if (address_ == 0x0F ) {
         ESP_LOGW(TAG, "No reg. match for ID: %02X, reg: %02X, reg. start: %02X, no. regs.: %02X, .", address_, current_address,start_address,number_of_registers);
-// put these registers in the waiting for response queue for the mute client
-//   something like this from send_next_command() after the send() function
-        this->last_command_timestamp_ = millis();
-//        this->command_sent_callback_.call((int) function_code, start_address);
-
-//     // make a command item
-        auto current_command = make_unique<ModbusCommandItem>(
-          ModbusCommandItem::create_read_command(this, ModbusRegisterType::HOLDING, start_address, number_of_registers));
-
-//     // Move the commandItem to the response queue
-//        current_command->payload = std::vector<uint8_t>();  // Empty payload
-//         this->incoming_queue_.push(std::move(current_command));
-//         ESP_LOGV(TAG, "Modbus response queued");
-//         this->command_queue_.pop_front();     // remove from queue since no handler is defined
-
-
         return; 
       } else {
         ESP_LOGW(TAG, "Could not match any register to address %02X. Sending exception response.", current_address);
@@ -173,6 +195,8 @@ void ModbusController::on_modbus_read_registers(uint8_t function_code, uint16_t 
       response.push_back(decoded_value[0]);
       response.push_back(decoded_value[1]);
     }
+  //call lambda
+    float value = server_register_out->read_lambda(*(server_register_out->glo_registers_));
       //  and send server response out,  send() calls send_raw() and does the CRC
     this->send(function_code, start_address, number_of_registers, response.size(), response.data());
   }
@@ -190,7 +214,8 @@ void ModbusController::on_modbus_read_registers_mute(uint8_t function_code, uint
     bool found = false;
     for (auto *server_register : this->server_registers_) {
       if (server_register->address == current_address) {
-        float value = server_register->read_lambda();
+        std::vector<uint16_t> registers;                //  dfk TODO see pcr20, maybe use this omrrm function to not adulterate the normal one
+        float value = server_register->read_lambda(registers);
 
         ESP_LOGD(TAG, "Matched register. Address: 0x%02X. Value type: %zu. Register count: %u. Value: %0.1f.",
                  server_register->address, static_cast<uint8_t>(server_register->value_type),
@@ -306,7 +331,7 @@ void ModbusController::update() {
 
   for (auto &r : this->register_ranges_) {
     ESP_LOGVV(TAG, "Updating range 0x%X", r.start_address);
-    update_range_(r);
+    if (not disable_send_) update_range_(r);   // only update for normal server device, not for sniffer
   }
 }
 
@@ -419,7 +444,7 @@ size_t ModbusController::create_register_ranges_() {
 
 void ModbusController::dump_config() {
   ESP_LOGCONFIG(TAG, "ModbusController:");
-  ESP_LOGCONFIG(TAG, "  Address: 0x%02X", this->address_);
+  ESP_LOGCONFIG(TAG, "  Address: 0x%02X disable_send_ %d", this->address_,this->disable_send_);
   ESP_LOGCONFIG(TAG, "  Max Command Retries: %d", this->max_cmd_retries_);
   ESP_LOGCONFIG(TAG, "  Offline Skip Updates: %d", this->offline_skip_updates_);
 #if ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_VERBOSE
@@ -629,7 +654,7 @@ ModbusCommandItem ModbusCommandItem::create_custom_command(
   return cmd;
 }
 
-bool ModbusCommandItem::send() {
+bool ModbusCommandItem::send(bool disable_send) {
   if (modbusdevice->get_address() == 15) {   // mute_client for battery
     return true;   // always return true, but not used
   }

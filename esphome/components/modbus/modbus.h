@@ -8,16 +8,22 @@
 namespace esphome {
 namespace modbus {
 
+static const char *const TAG = "modbus";  
+
 enum ModbusRole {
   CLIENT,
   SERVER,
   MUTE_CLIENT,
 };   
-// MUTE_CLIENT is a passive listener, storing data returned by another server in response to the bus CLIENT (master),
+// MUTE_CLIENT is a passive listener, 
+//  reading data returned by another server in response to the bus CLIENT (master),
 //  after observing a CLIENT request matching addresses configured for the MUTE_CLIENT sensors.
 //   MUTE_CLIENT is not a true Modbus device, and does not respond to Modbus commands.
 
+enum frame_type_enum { error_80, response_custom, response_0304, command_0304, response_05060F10, command_05060F10,no_frame};
+
 class ModbusDevice;
+
 
 class Modbus : public uart::UARTDevice, public Component {
  public:
@@ -60,9 +66,24 @@ class ModbusDevice {
  public:
   void set_parent(Modbus *parent) { parent_ = parent; }
   void set_address(uint8_t address) { address_ = address; }
+//  void set_disable_send(bool disable_send) { disable_send_ = disable_send; }
+//  bool get_disable_send() const { return disable_send_; } 
+  ModbusDevice() : disable_send_(false) {
+    ESP_LOGW(TAG, "ModbusDevice constructor, disable_send_ initialized to %d", disable_send_);
+  }
+  void set_disable_send(bool disable_send) { 
+    ESP_LOGW(TAG, "ModbusDevice::set_disable_send to %d for device 0x%02X", disable_send, address_); 
+    disable_send_ = disable_send; 
+  }
+  bool get_disable_send() const { 
+//    ESP_LOGW(TAG, "ModbusDevice::get_disable_send returns %d for device 0x%02X", disable_send_, address_);
+    return disable_send_; 
+  }
+
   uint8_t get_address() const { return address_; }
 //  ModbusRole role_{ModbusRole::CLIENT}; 
-  virtual void on_modbus_data(const std::vector<uint8_t> &data) = 0;
+//  virtual void on_modbus_data(const std::vector<uint8_t> &data) = 0;
+  virtual void on_modbus_data(bool is_response,uint8_t address,uint8_t function_code, uint16_t start_address,uint16_t number_of_registers,uint16_t crc,const std::vector<uint8_t> &data)= 0;
   virtual void on_modbus_error(uint8_t function_code, uint8_t exception_code) {}
   virtual void on_modbus_read_registers(uint8_t function_code, uint16_t start_address, uint16_t number_of_registers){ };
   virtual void on_modbus_read_registers_mute(uint8_t function_code, uint16_t start_address, uint16_t number_of_registers){ };
@@ -79,6 +100,8 @@ class ModbusDevice {
 
   Modbus *parent_;
   uint8_t address_;
+  bool disable_send_;  
+
 };
 
 }  // namespace modbus

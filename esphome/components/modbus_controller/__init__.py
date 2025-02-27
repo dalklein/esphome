@@ -1,4 +1,5 @@
 import binascii
+import pprint
 
 from esphome import automation
 import esphome.codegen as cg
@@ -32,6 +33,7 @@ from .const import (
     CONF_RESPONSE_SIZE,
     CONF_SKIP_UPDATES,
     CONF_VALUE_TYPE,
+    CONF_DISABLE_SEND,
 )
 
 CODEOWNERS = ["@martgras"]
@@ -39,6 +41,7 @@ CODEOWNERS = ["@martgras"]
 AUTO_LOAD = ["modbus"]
 
 CONF_READ_LAMBDA = "read_lambda"
+CONF_START_ADDRESS = "start_address"
 CONF_SERVER_REGISTERS = "server_registers"
 MULTI_CONF = True
 
@@ -131,7 +134,8 @@ ModbusServerRegisterSchema = cv.Schema(
         cv.GenerateID(): cv.declare_id(ServerRegister),
         cv.Required(CONF_ADDRESS): cv.positive_int,
         cv.Optional(CONF_VALUE_TYPE, default="U_WORD"): cv.enum(SENSOR_VALUE_TYPE),
-        cv.Required(CONF_READ_LAMBDA): cv.returning_lambda,
+        cv.Optional(CONF_READ_LAMBDA): cv.returning_lambda,
+        cv.Optional(CONF_REGISTER_COUNT): cv.positive_int,
     }
 )
 
@@ -146,6 +150,7 @@ CONFIG_SCHEMA = cv.All(
             ): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_MAX_CMD_RETRIES, default=4): cv.positive_int,
             cv.Optional(CONF_OFFLINE_SKIP_UPDATES, default=0): cv.positive_int,
+            cv.Optional(CONF_DISABLE_SEND, default=False): cv.boolean,
             cv.Optional(
                 CONF_SERVER_REGISTERS,
             ): cv.ensure_list(ModbusServerRegisterSchema),
@@ -281,6 +286,7 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     cg.add(var.set_allow_duplicate_commands(config[CONF_ALLOW_DUPLICATE_COMMANDS]))
     cg.add(var.set_command_throttle(config[CONF_COMMAND_THROTTLE]))
+    cg.add(var.set_disable_send(config[CONF_DISABLE_SEND]))
     cg.add(var.set_max_cmd_retries(config[CONF_MAX_CMD_RETRIES]))
     cg.add(var.set_offline_skip_updates(config[CONF_OFFLINE_SKIP_UPDATES]))
     if CONF_SERVER_REGISTERS in config:
@@ -294,7 +300,12 @@ async def to_code(config):
                         TYPE_REGISTER_MAP[server_register[CONF_VALUE_TYPE]],
                         await cg.process_lambda(
                             server_register[CONF_READ_LAMBDA],
-                            [],
+                            [  # params list for the lambda
+                                (
+                                    cg.std_vector.template(cg.uint16).operator("ref"),
+                                    "data",
+                                ),
+                            ],
                             return_type=cg.float_,
                         ),
                     )
@@ -320,16 +331,22 @@ async def to_code(config):
 
 async def register_modbus_device(var, config):
 #    from esphome.components.modbus_controller.const import CONF_MODBUS_CONTROLLER_ID
+#    disable_send = config.get(CONF_DISABLE_SEND, False)
+#    cg.add(var.set_disable_send(disable_send))
     cg.add(var.set_address(config[CONF_ADDRESS]))
     await cg.register_component(var, config)
     _LOGGER.info(
 #        "Modbus device registered with address: %s, Modbus ID: %s, Modbus controller ID: %s",
 #        "Modbus device registered with address: %s, Modbus controller ID: %s",
-        "Modbus device registered with address: %s",
+        "Modbus controller device registered with address: %s, DISABLE_SEND: %s",
         config[CONF_ADDRESS],
+        config.get(CONF_DISABLE_SEND, False),  # disable_send,
+#        config[CONF_DISABLE_SEND],
 #        config[CONF_MODBUS_ID],
 #        config[CONF_MODBUS_CONTROLLER_ID],
     )
+#    _LOGGER.info("Config object: %s", pprint.pformat(config))
+#    _LOGGER.info("Var object: %s", pprint.pformat(var))
     return await modbus.register_modbus_device(var, config)
 
 

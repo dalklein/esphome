@@ -12,7 +12,8 @@ from esphome.const import (
     CONF_ID,
     CONF_ADDRESS,
     CONF_DISABLE_CRC,
-    CONF_UART_ID,  # Add this line
+    CONF_UART_ID,
+#   CONF_DISABLE_SEND,  # Add this line
 )
 from esphome import pins
 
@@ -27,6 +28,7 @@ MULTI_CONF = True
 CONF_ROLE = "role"
 CONF_MODBUS_ID = "modbus_id"
 CONF_SEND_WAIT_TIME = "send_wait_time"
+CONF_DISABLE_SEND = "disable_send"
 
 ModbusRole = modbus_ns.enum("ModbusRole")
 MODBUS_ROLES = {
@@ -112,8 +114,11 @@ def final_validate_modbus_device(
 
 async def register_modbus_device(var, config):
     parent = await cg.get_variable(config[CONF_MODBUS_ID])
+    disable_send = config.get(CONF_DISABLE_SEND, False)
+    _LOGGER.info("modbus/__init__.py: Setting disable_send to %s for device %s", disable_send, config[CONF_ADDRESS])
     cg.add(var.set_parent(parent))
     cg.add(var.set_address(config[CONF_ADDRESS]))
+    cg.add(var.set_disable_send(config.get(CONF_DISABLE_SEND, False)))
     cg.add(parent.register_device(var))
     # role = config.get(CONF_ROLE)
     # if role is None:

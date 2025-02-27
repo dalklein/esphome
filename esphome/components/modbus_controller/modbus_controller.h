@@ -246,16 +246,23 @@ class SensorItem {
   uint32_t bitmask{0};
   uint8_t offset{0};
   uint8_t register_count{0};
+  uint8_t address_in;
+  bool is_response_in;
+  uint8_t function_code_in;
+  uint16_t start_reg_in;
+  uint16_t num_reg_in;
+  uint16_t crc_in;
   uint8_t response_bytes{0};
   uint16_t skip_updates{0};
   std::vector<uint8_t> custom_data{};
   bool force_new_range{false};
+  std::vector<uint16_t> * glo_registers_;
 };
 
 class ServerRegister {
  public:
   ServerRegister(uint16_t address, SensorValueType value_type, uint8_t register_count,
-                 std::function<float()> read_lambda) {
+                 std::function<float(std::vector<uint16_t>&)> read_lambda) {
     this->address = address;
     this->value_type = value_type;
     this->register_count = register_count;
@@ -264,7 +271,8 @@ class ServerRegister {
   uint16_t address{0};
   SensorValueType value_type{SensorValueType::RAW};
   uint8_t register_count{0};
-  std::function<float()> read_lambda;
+  std::function<float(std::vector<uint16_t> & data)> read_lambda;
+  std::vector<uint16_t> * glo_registers_;
 };
 
 // ModbusController::create_register_ranges_ tries to optimize register range
@@ -320,7 +328,7 @@ class ModbusCommandItem {
   std::function<void(ModbusRegisterType register_type, uint16_t start_address, const std::vector<uint8_t> &data)>
       on_data_func;
   std::vector<uint8_t> payload = {};
-  bool send();
+  bool send(bool disable_send=false);
   /// Check if the command should be retried based on the max_retries parameter
   bool should_retry(uint8_t max_retries) { return this->send_count_ <= max_retries; };
 
@@ -441,7 +449,9 @@ class ModbusController : public PollingComponent, public modbus::ModbusDevice {
   /// Registers a server register with the controller. Called by esphomes code generator
   void add_server_register(ServerRegister *server_register) { server_registers_.push_back(server_register); }
   /// called when a modbus response was parsed without errors
-  void on_modbus_data(const std::vector<uint8_t> &data) override;
+  void on_modbus_data(const std::vector<uint8_t> &data);  // override;
+  void on_modbus_data(bool is_response,uint8_t address,uint8_t function_code, uint16_t start_address,uint16_t number_of_registers,uint16_t crc,const std::vector<uint8_t> &data) override;
+  
   /// called when a modbus error response was received
   void on_modbus_error(uint8_t function_code, uint8_t exception_code) override;
   /// called when a modbus request (function code 3 or 4) was parsed without errors
@@ -478,6 +488,7 @@ class ModbusController : public PollingComponent, public modbus::ModbusDevice {
   void set_max_cmd_retries(uint8_t max_cmd_retries) { this->max_cmd_retries_ = max_cmd_retries; }
   /// get how many times a command will be (re)sent if no response is received
   uint8_t get_max_cmd_retries() { return this->max_cmd_retries_; }
+
 
  protected:
   /// parse sensormap_ and create range of sequential addresses
@@ -520,6 +531,8 @@ class ModbusController : public PollingComponent, public modbus::ModbusDevice {
   CallbackManager<void(int, int)> online_callback_{};
   /// Server offline callback
   CallbackManager<void(int, int)> offline_callback_{};
+  /// disable sending modbus message, for a mute client / sniffer
+  bool disable_send_;
 };
 
 /** Convert vector<uint8_t> response payload to float.

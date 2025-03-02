@@ -113,19 +113,19 @@ void ModbusController::on_modbus_data(bool is_response,uint8_t address,uint8_t f
         
         ESP_LOGW(TAG, "About to process %d registers starting at offset %d", number_of_registers, start_offset);
         
-        // Try processing one register at a time with logging
-        for (int i=0; i<number_of_registers; i++) {
-          ESP_LOGW(TAG, "Processing register %d", i);
-          try {
-            uint16_t value = ((uint16_t)data[2*i+1]) | (((uint16_t)data[2*i]) << 8);
-            ESP_LOGW(TAG, "Calculated value: 0x%04X", value);
-            (*sensor->glo_registers_)[i+start_offset] = value;
-            ESP_LOGW(TAG, "Stored value successfully");
-          } catch (const std::exception& e) {
-            ESP_LOGW(TAG, "Exception while processing register: %s", e.what());
-        //    return;
-          }
-        }
+        // // Try processing one register at a time with logging
+        // for (int i=0; i<number_of_registers; i++) {
+        //   ESP_LOGW(TAG, "Processing register %d", i);
+        //   try {
+        //     uint16_t value = ((uint16_t)data[2*i+1]) | (((uint16_t)data[2*i]) << 8);
+        //     ESP_LOGW(TAG, "Calculated value: 0x%04X", value);
+        //     (*sensor->glo_registers_)[i+start_offset] = value;
+        //     ESP_LOGW(TAG, "Stored value successfully");
+        //   } catch (const std::exception& e) {
+        //     ESP_LOGW(TAG, "Exception while processing register: %s", e.what());
+        // //    return;
+        //   }
+        // }
 
 
 

@@ -13,6 +13,9 @@ logger:
 #  level: VERBOSE
   baud_rate: 0
 
+debug:
+  update_interval: 10s
+
 mqtt:
   broker: !secret mqtt_broker_ip
   port: 1883
@@ -43,6 +46,10 @@ wifi:
 captive_portal:
 
 sensor:
+  - platform: debug
+    loop_time:
+      name: "Loop Time"
+
   - platform: modbus_controller
     modbus_controller_id: meter_client
     id: meter_PhA_N_Voltage
@@ -194,7 +201,8 @@ sensor:
   - platform: modbus_controller
     modbus_controller_id: meter_client
     id: meter_TotWh_Exp
-    internal: true
+    name: "Meter Total Wh Export"   # name for mqtt publish, converts to lowercase underscore
+    #internal: true   # true=no mqtt publish
     address: 40038
     register_type: read
     value_type: S_DWORD
@@ -202,7 +210,6 @@ sensor:
     device_class: power
     state_class: measurement
     skip_updates: 98
-
   - platform: modbus_controller
     modbus_controller_id: meter_client
     id: meter_TotWhPhA_Exp
@@ -214,7 +221,6 @@ sensor:
     device_class: power
     state_class: measurement
     skip_updates: 98
-
   - platform: modbus_controller
     modbus_controller_id: meter_client
     id: meter_TotWhPhB_Exp
@@ -238,7 +244,6 @@ sensor:
     device_class: power
     state_class: measurement
     skip_updates: 99
-
   - platform: modbus_controller
     modbus_controller_id: meter_client
     id: meter_TotWh_ImpPhA
@@ -250,7 +255,6 @@ sensor:
     device_class: power
     state_class: measurement
     skip_updates: 99
-
   - platform: modbus_controller
     modbus_controller_id: meter_client
     id: meter_TotWh_ImpPhB
@@ -593,42 +597,26 @@ sensor:
     id: adjusted_power_ph_b
     name: "Adjusted Power Phase B"
 
-  # - platform: modbus_controller
-  #   modbus_controller_id: batt_mute_client
-  #   id: lg_110
-  #   internal: true
-  #   address: 110
-  #   register_type: read
-  #   value_type: U_WORD
-  #   unit_of_measurement: ""
-  #   device_class: power
-  #   state_class: measurement
-  #   skip_updates: 1001
-  #   on_value:
-  #     then:
-  #       - mqtt.publish:
-  #           topic: "delta/inv/lg/110/state"
-  #           payload: !lambda |-
-  #             int value = id(lg_110).state;
-  #             return String(value).c_str();
-  # - platform: modbus_controller
-  #   modbus_controller_id: batt_mute_client
-  #   id: lg_111
-  #   internal: true
-  #   address: 111
-  #   register_type: read
-  #   value_type: U_WORD
-  #   unit_of_measurement: ""
-  #   device_class: power
-  #   state_class: measurement
-  #   skip_updates: 1001
-  #   on_value:
-  #     then:
-  #       - mqtt.publish:
-  #           topic: "delta/inv/lg/111/state"
-  #           payload: !lambda |-
-  #             int value = id(lg_111).state;
-  #             return String(value).c_str();
+  - platform: modbus_controller
+    modbus_controller_id: batt_mute_client
+    id: lg_110
+    name: lg_110_6E
+    register_type: read
+    register_count: 1 
+    address: 110
+    value_type: U_WORD
+    skip_updates: 10
+    # lambda: |-
+    #   ESP_LOGV("lambda id0002"," function_code:0x%02x is_response: %d start_reg: 0x%04x num_reg: 0x%02x sizeof: %d",
+    #   item->function_code_in,item->is_response_in,item->start_reg_in,item->num_reg_in,data.size());
+    #   return data[0];
+    # on_value:
+    #   then:
+    #     - mqtt.publish:
+    #         topic: "delta/inv/lg/110/state"
+    #         payload: !lambda |-
+    #           int value = id(lg_110).state;
+    #           return String(value).c_str();
 
 uart:
   - id: moduart_meter     # cross rx/tx lines from ESP to ttl-rs485

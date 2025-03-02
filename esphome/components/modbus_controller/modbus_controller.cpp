@@ -60,34 +60,86 @@ bool ModbusController::send_next_command_() {
 void ModbusController::on_modbus_data(bool is_response,uint8_t address,uint8_t function_code, 
       uint16_t start_address,uint16_t number_of_registers,uint16_t crc,const std::vector<uint8_t> &data) {
 //  ESP_LOGW(TAG, "on_modbus_data: is_response: %d address: 0x%02X function_code: 0x%02X start_address: 0x%02X number_of_registers: 0x%02X crc: 0x%02X data size: %d. Disable send: %d", disable_send_);
-  ESP_LOGW(TAG, "disable_send_ %d,  device->get_disable_send() %d", disable_send_, this->get_disable_send());
+//  ESP_LOGW(TAG, "on_modbus_data:  disable_send_ %d,  device->get_disable_send() %d  is_response: %d", disable_send_, this->get_disable_send(), is_response);
 
-  if (disable_send_) {
+  if (this->get_disable_send()) {
     static uint16_t staticcounter=0;
-      update_range_(register_ranges_.front());
-      send_next_command_();
-      //update sensor metadata
-   for (auto *sensor : this->sensorset_) {
-    //sensor->parse_and_publish(data);
-        sensor->is_response_in=is_response;
-        sensor->address_in=address;
-        sensor->crc_in=crc;
-        sensor->function_code_in=function_code;
-        sensor->start_reg_in=start_address;
-        sensor->num_reg_in=number_of_registers;
-        int start_offset = start_address-sensor->start_address;
-        if ((start_address >= sensor->start_address) &&  ((start_address+number_of_registers) <= (sensor->start_address+sensor->register_count))) {
-          ESP_LOGD(TAG, "**Fn: 0x%X A:0x%X #:%d S A:0x%x #:%d off:%d  :%x", function_code,start_address,number_of_registers,sensor->start_address,sensor->register_count,start_offset,
-          sensor->glo_registers_); 
+    if (!is_response) {
+      ESP_LOGW(TAG, "on_modbus_data: cmd addr:0x%02hhX, is_resp:%d, start:0x%X, num:0x%X", address, is_response, start_address, number_of_registers);
+    }
+    else {
+      ESP_LOGW(TAG, "on_modbus_data: resp addr:0x%02hhX, is_resp:%d", address, is_response);
+      // print to log the raw data vector
+      std::string raw_bytes;
+      for (size_t i = 0; i < data.size(); i++) {
+          char hex[4];
+          snprintf(hex, sizeof(hex), "%02X ", data[i]);
+          raw_bytes += hex;
+      }
+      ESP_LOGW(TAG, "data raw bytes:    %s", raw_bytes.c_str()); 
+    }
+    for (const auto &r : register_ranges_) {  //.front(); 
+      ESP_LOGW(TAG, "on_modbus_data: Range: %X Size: %x (%d) skip: %d", r.start_address, r.register_count, (int) r.register_type,
+           r.skip_updates_counter);
+    }
 
-          for (int i=0;i<number_of_registers;i++)  {
-            (*sensor->glo_registers_)[i+start_offset]=((uint16_t)data[2*i+1]) | (((uint16_t)data[2*i]) << 8);
+//    const auto &r = register_ranges_[1]; // .front();
+//    ESP_LOGW(TAG, "on_modbus_data: Range: %X Size: %x (%d) skip: %d", r.start_address, r.register_count, (int) r.register_type,
+//           r.skip_updates_counter);
+
+
+//    update_range_(register_ranges_.front());    // freezes if sensors not defined? 
+    send_next_command_();
+      //update sensor metadata
+    for (auto *sensor : this->sensorset_) {
+    //sensor->parse_and_publish(data);
+      sensor->is_response_in=is_response;
+      sensor->address_in=address;
+      sensor->crc_in=crc;
+      sensor->function_code_in=function_code;
+      sensor->start_reg_in=start_address;
+      sensor->num_reg_in=number_of_registers;
+      int start_offset = start_address-sensor->start_address;
+      if ((start_address >= sensor->start_address) &&  
+          ((start_address+number_of_registers) <= (sensor->start_address+sensor->register_count))) {
+        ESP_LOGW(TAG, "**Fn: 0x%X A:0x%X #:%d S A:0x%x #:%d off:%d  :%x", function_code,start_address,number_of_registers,sensor->start_address,sensor->register_count,start_offset,
+               sensor->glo_registers_); 
+
+        // Add debug logging
+        if (sensor->glo_registers_ == nullptr) {
+          ESP_LOGW(TAG, "glo_registers_ is null!");
+          return;
+        }
+        
+        ESP_LOGW(TAG, "About to process %d registers starting at offset %d", number_of_registers, start_offset);
+        
+        // Try processing one register at a time with logging
+        for (int i=0; i<number_of_registers; i++) {
+          ESP_LOGW(TAG, "Processing register %d", i);
+          try {
+            uint16_t value = ((uint16_t)data[2*i+1]) | (((uint16_t)data[2*i]) << 8);
+            ESP_LOGW(TAG, "Calculated value: 0x%04X", value);
+            (*sensor->glo_registers_)[i+start_offset] = value;
+            ESP_LOGW(TAG, "Stored value successfully");
+          } catch (const std::exception& e) {
+            ESP_LOGW(TAG, "Exception while processing register: %s", e.what());
+        //    return;
           }
         }
+
+
+
+
+        // for (int i=0;i<number_of_registers;i++)  {
+        //   (*sensor->glo_registers_)[i+start_offset]=((uint16_t)data[2*i+1]) | (((uint16_t)data[2*i]) << 8);
+        // }
+      }
     }
   }
   on_modbus_data(data);
 }
+
+
 
 // Queue incoming response
 void ModbusController::on_modbus_data(const std::vector<uint8_t> &data) {
@@ -292,8 +344,7 @@ void ModbusController::queue_command(const ModbusCommandItem &command) {
 }
 
 void ModbusController::update_range_(RegisterRange &r) {
-  ESP_LOGV(TAG, "Range : %X Size: %x (%d) skip: %d", r.start_address, r.register_count, (int) r.register_type,
-           r.skip_updates_counter);
+//  ESP_LOGW(TAG, "update_range_: Range : %X Size: %x (%d) skip: %d", r.start_address, r.register_count, (int) r.register_type, r.skip_updates_counter);
   if (r.skip_updates_counter == 0) {
     // if a custom command is used the user supplied custom_data is only available in the SensorItem.
     if (r.register_type == ModbusRegisterType::CUSTOM) {
@@ -330,7 +381,7 @@ void ModbusController::update() {
   }
 
   for (auto &r : this->register_ranges_) {
-    ESP_LOGVV(TAG, "Updating range 0x%X", r.start_address);
+  //  ESP_LOGW(TAG, "update: Updating range 0x%X, disable_send=%d", r.start_address,disable_send_);
     if (not disable_send_) update_range_(r);   // only update for normal server device, not for sniffer
   }
 }

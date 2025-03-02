@@ -179,18 +179,18 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
     if (this->disable_crc_) {
       ESP_LOGD(TAG, "Modbus CRC Check failed, but ignored! %02X!=%02X", computed_crc, remote_crc);
     } else {
-      ESP_LOGW(TAG, "Modbus CRC Check fail! %02X!=%02X", computed_crc, remote_crc);
-      // std::string raw_bytes;
-      // for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
-      //     char hex[4];
-      //     snprintf(hex, sizeof(hex), "%02X ", this->rx_buffer_[i]);
-      //     raw_bytes += hex;
-      // }
-      // if(this->role == ModbusRole::SERVER){
-      //   ESP_LOGW(TAG, "SERVER Failed CRC msg:    %s", raw_bytes.c_str()); 
-      // } else {
-      //   ESP_LOGW(TAG, "  CLIENT Failed CRC msg:    %s", raw_bytes.c_str());         
-      // }
+//      ESP_LOGW(TAG, "Modbus CRC Check fail! %02X!=%02X", computed_crc, remote_crc);
+      std::string raw_bytes;
+      for (size_t i = 0; i < this->rx_buffer_.size(); i++) {
+          char hex[4];
+          snprintf(hex, sizeof(hex), "%02X ", this->rx_buffer_[i]);
+          raw_bytes += hex;
+      }
+      if(this->role == ModbusRole::SERVER){
+        ESP_LOGW(TAG, "SERVER Failed CRC msg:    %s", raw_bytes.c_str()); 
+      } else {
+        ESP_LOGW(TAG, "  CLIENT Failed CRC msg:    %s", raw_bytes.c_str());         
+      }
       return false;
     }
   }
@@ -199,7 +199,8 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
   uint16_t start_reg= uint16_t(raw[3]) | (uint16_t(raw[2]) << 8);
   uint16_t num_regs= uint16_t(raw[5]) | (uint16_t(raw[4]) << 8);
 //  std::vector<uint8_t> data(this->rx_buffer_.begin() + data_offset, this->rx_buffer_.begin() + data_offset + data_len);
-  std::vector<uint8_t> data(this->rx_buffer_.begin() + data_offset[frame_type], this->rx_buffer_.begin() + data_offset[frame_type] + data_len[frame_type]);
+  std::vector<uint8_t> data(this->rx_buffer_.begin() + data_offset[frame_type], 
+      this->rx_buffer_.begin() + data_offset[frame_type] + data_len[frame_type]);
   
   // if (address == 0x0F ) {
   //   const char *frame_type_str = nullptr;
@@ -264,10 +265,12 @@ bool Modbus::parse_modbus_byte_(uint8_t byte) {
           // Ignore modbus exception not related to a pending command
           ESP_LOGD(TAG, "Ignoring Modbus error - not expecting a response");
         }
-      } else if (this->role == ModbusRole::SERVER && (function_code == 0x3 || function_code == 0x4)) {
-        ESP_LOGW(TAG, "SERVER read registers for address %02X! device->get_disable_send() %d", address, device->get_disable_send());
+      } else if (this->role == ModbusRole::SERVER && !device->get_disable_send()  //
+          && (function_code == 0x3 || function_code == 0x4)) {
+        // ESP_LOGW(TAG, "SERVER read regs address %02X! disable_send()= %d", address, device->get_disable_send());
         device->on_modbus_read_registers(function_code,start_reg,num_regs);
       } else {
+//        ESP_LOGW(TAG, "call on_modbus_data, address %02X, disable_send()= %d, is_response %d", address, device->get_disable_send(), is_response[frame_type]);
         device->on_modbus_data(is_response[frame_type],address,function_code,start_reg,num_regs,remote_crc,data);
       }
       found = true;

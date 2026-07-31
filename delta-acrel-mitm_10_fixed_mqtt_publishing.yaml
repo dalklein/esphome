@@ -20,10 +20,6 @@ mqtt:
   on_disconnect:
     - logger.log: "MQTT broker not available, continuing execution."
 
-# Enable Home Assistant API
-#api:
-#  password: "12345678"
-
 ota:
   - platform: esphome
     password: !secret ota_password

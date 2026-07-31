@@ -22,7 +22,7 @@ mqtt:
 
 # Enable Home Assistant API
 #api:
-#  password: "igeruja8"
+#  password: "12345678"
 
 ota:
   - platform: esphome

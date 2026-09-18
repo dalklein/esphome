@@ -132,14 +132,19 @@ void IDFUARTComponent::load_settings(bool dump_config) {
       this->mark_failed();
       return;
     }
+    // The delete freed the queue this handle points at; a re-install with event_queue_size_ 0
+    // would leave it dangling.
+    this->uart_event_queue_ = nullptr;
+    this->frame_accum_.clear();
+    this->orphan_strike_ = false;
   }
   err = uart_driver_install(this->uart_num_,        // UART number
                             this->rx_buffer_size_,  // RX ring buffer size
                             0,  // TX ring buffer size. If zero, driver will not use a TX buffer and TX function will
                                 // block task until all data has been sent out
-                            0,  // event queue size/depth
-                            nullptr,  // event queue
-                            0         // Flags used to allocate the interrupt
+                            (int) this->event_queue_size_,  // event queue size/depth (0 = none)
+                            this->event_queue_size_ > 0 ? &this->uart_event_queue_ : nullptr,  // event queue
+                            0  // Flags used to allocate the interrupt
   );
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "uart_driver_install failed: %s", esp_err_to_name(err));
@@ -210,6 +215,7 @@ void IDFUARTComponent::load_settings(bool dump_config) {
     this->mark_failed();
     return;
   }
+  this->apply_always_rx_timeout_();
 
 #ifdef USE_UART_WAKE_LOOP_ON_RX
   // Register ISR callback to wake the main loop when UART data arrives.
@@ -363,6 +369,8 @@ void IDFUARTComponent::set_rx_timeout(size_t rx_timeout) {
       ESP_LOGW(TAG, "uart_set_rx_timeout failed: %s", esp_err_to_name(err));
       return;
     }
+    // Re-assert the flag against the new threshold; rx_timeout 0 correctly disarms it.
+    this->apply_always_rx_timeout_();
   }
   this->rx_timeout_ = rx_timeout;
 }
@@ -469,6 +477,114 @@ void IDFUARTComponent::on_shutdown() {
   if (err != ESP_OK) {
     ESP_LOGW(TAG, "uart_driver_delete failed: %s", esp_err_to_name(err));
   }
+  // The delete freed the queue; same reasoning as the re-install path in load_settings().
+  this->uart_event_queue_ = nullptr;
+  this->frame_accum_.clear();
+}
+
+// MUST be called only AFTER uart_set_rx_timeout(): uart_set_always_rx_timeout() reads the
+// current threshold and silently forces the flag off if it is zero. It returns void and the flag
+// cannot be read back, so an out-of-order call is an undetectable no-op.
+// Without the flag, a frame whose length is a multiple of rx_full_threshold drains the FIFO
+// exactly at its end, leaving nothing to time out, and that boundary is lost.
+void IDFUARTComponent::apply_always_rx_timeout_() {
+  if (this->event_queue_size_ == 0)
+    return;
+  uart_set_always_rx_timeout(this->uart_num_, true);
+}
+
+// Drop everything and re-establish a known state: once the event stream and the ring buffer
+// disagree, every later frame stays shifted, with plausible-looking contents.
+void IDFUARTComponent::frame_resync_(const char *why) {
+  ESP_LOGW(TAG, "UART%d frame resync: %s", (int) this->uart_num_, why);
+  this->frame_desync_count_++;
+  // Not atomic: an interrupt between these two leaves an event for discarded data, whose read
+  // comes up short and lands back here. One extra resync, never bad data.
+  uart_flush_input(this->uart_num_);
+  xQueueReset(this->uart_event_queue_);
+  this->frame_accum_.clear();
+  this->orphan_strike_ = false;
+}
+
+// The event queue is fixed size and lossy: a dropped event leaves its bytes in the ring buffer,
+// so the next event reads those orphans instead. got == ev.size, so no length check can see it,
+// and every frame after that is shifted. This is the detector: bytes present, no event.
+void IDFUARTComponent::check_orphaned_bytes_() {
+  size_t buffered = 0;
+  if (uart_get_buffered_data_len(this->uart_num_, &buffered) != ESP_OK)
+    return;
+  if (buffered == 0 || uxQueueMessagesWaiting(this->uart_event_queue_) != 0) {
+    this->orphan_strike_ = false;
+    return;
+  }
+  // The ISR buffers data before posting its event, so one observation can be a benign race.
+  // Require two separated in TIME, not just two calls: a `while (read_frame(buf))` drain makes
+  // successive calls microseconds apart, and a false positive flushes a legitimate frame.
+  const uint32_t now = millis();
+  if (!this->orphan_strike_) {
+    this->orphan_strike_ = true;
+    this->orphan_strike_ms_ = now;
+    return;
+  }
+  if (now == this->orphan_strike_ms_)
+    return;  // same millisecond: still inside the window we are trying to exclude
+  this->frame_resync_("orphaned bytes in ring buffer (event queue overflowed)");
+}
+
+bool IDFUARTComponent::read_frame(std::vector<uint8_t> &out) {
+  if (this->uart_event_queue_ == nullptr)
+    return false;  // not opted in via event_queue_size
+
+  uart_event_t ev;
+  while (xQueueReceive(this->uart_event_queue_, &ev, 0) == pdTRUE) {
+    switch (ev.type) {
+      case UART_DATA: {
+        this->data_event_count_++;
+        if (ev.timeout_flag)
+          this->timeout_event_count_++;
+        if (ev.size > 0) {
+          const size_t off = this->frame_accum_.size();
+          this->frame_accum_.resize(off + ev.size);
+          const int got = uart_read_bytes(this->uart_num_, this->frame_accum_.data() + off, ev.size, 0);
+          if (got != (int) ev.size) {
+            // NOT "a short frame". The event promised ev.size bytes and the ring buffer did not
+            // have them, which means something else consumed from this UART (read_array() /
+            // read_byte() on the same instance) or bytes were lost. Returning what we got would
+            // hand back a truncated frame AND leave the remainder in the buffer, shifting every
+            // frame after it. This is also the entire mixing hazard, caught here for free.
+            this->frame_resync_("short read: event and ring buffer disagree");
+            break;
+          }
+        }
+        // timeout_flag distinguishes the two reasons for a UART_DATA event: FIFO reached
+        // rx_full_threshold (mid-frame), or the line went idle (frame ended). Returning on the
+        // former would chop frames into rx_full_threshold-sized pieces.
+        if (ev.timeout_flag && !this->frame_accum_.empty()) {
+          out.swap(this->frame_accum_);
+          this->frame_accum_.clear();
+          this->check_orphaned_bytes_();
+          return true;
+        }
+        // Guard against a line that never goes idle: hand back what we have rather than growing
+        // without bound. Degrades to chunked delivery, never to an allocation failure.
+        if (this->frame_accum_.size() >= this->rx_buffer_size_) {
+          ESP_LOGW(TAG, "UART%d frame exceeded rx_buffer_size without an idle gap", (int) this->uart_num_);
+          out.swap(this->frame_accum_);
+          this->frame_accum_.clear();
+          return true;
+        }
+        break;
+      }
+      case UART_FIFO_OVF:
+      case UART_BUFFER_FULL:
+        this->rx_overrun_count_++;
+        this->frame_resync_("RX overrun");
+        break;
+      default:
+        break;
+    }
+  }
+  return false;
 }
 
 }  // namespace esphome::uart

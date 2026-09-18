@@ -130,6 +130,30 @@ class UARTComponent {
   // @param rx_timeout RX timeout interrupt threshold (unit: time of sending one byte).
   virtual void set_rx_timeout(size_t rx_timeout) {}
 
+  // Read the bytes between two line-idle gaps. The platform supplies that boundary; available()
+  // and read_array() cannot, because the ring buffer has already discarded it.
+  // The boundary is guaranteed to fall BETWEEN protocol messages, never inside one, but a single
+  // read may contain SEVERAL messages when their gap is shorter than rx_timeout -- the caller
+  // still splits by content.
+  // @param out Received bytes, replaced on success.
+  // @return True if a complete idle-delimited read was returned. Default is a no-op, so existing
+  //         components are unaffected.
+  virtual bool read_frame(std::vector<uint8_t> &out) { return false; }
+
+  // @return True if read_frame() is meaningful on this platform.
+  virtual bool supports_frame_reads() const { return false; }
+
+  // Diagnostics for read_frame(). timeout_events is not merely informational: on esp-idf the
+  // line-idle guarantee is armed by uart_set_always_rx_timeout(), which returns void and cannot
+  // be queried, so timeout_events == frames received is the only way to confirm it armed.
+  struct FrameStats {
+    uint32_t data_events;     // data events consumed
+    uint32_t timeout_events;  // ...of which ended on a line-idle boundary
+    uint32_t overruns;        // RX overruns seen while reading frames
+    uint32_t desyncs;         // resyncs after event/buffer correspondence was lost
+  };
+  virtual FrameStats get_frame_stats() const { return {}; }
+
   // Gets the RX timeout interrupt threshold.
   // @return RX timeout interrupt threshold (unit: time of sending one byte).
   size_t get_rx_timeout() { return this->rx_timeout_; }

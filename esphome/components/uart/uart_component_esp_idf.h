@@ -3,6 +3,9 @@
 #ifdef USE_ESP32
 
 #include <driver/uart.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <vector>
 #include "esphome/core/component.h"
 #include "uart_component.h"
 #ifdef USE_UART_WAKE_LOOP_ON_RX
@@ -44,6 +47,18 @@ class IDFUARTComponent final : public UARTComponent, public Component {
     this->has_peek_ = false;
     uart_flush_input(this->uart_num_);
   }
+
+  void set_event_queue_size(size_t n) { this->event_queue_size_ = n; }
+  // Deliberately keyed on the CONFIGURED size, not on the queue handle: the handle only
+  // becomes non-null once this component's setup() has run uart_driver_install(), so testing
+  // it would make the answer depend on component setup order. Consumers ask this from their
+  // own setup(). The null check still guards read_frame(), where it actually matters.
+  bool supports_frame_reads() const override { return this->event_queue_size_ > 0; }
+  FrameStats get_frame_stats() const override {
+    return FrameStats{this->data_event_count_, this->timeout_event_count_, this->rx_overrun_count_,
+                      this->frame_desync_count_};
+  }
+  bool read_frame(std::vector<uint8_t> &out) override;
 
   /**
    * Load the UART with the current settings.
@@ -87,6 +102,21 @@ class IDFUARTComponent final : public UARTComponent, public Component {
   // Re-applies what uart_param_config() resets: inversion, RX threshold/timeout, mode.
   esp_err_t apply_line_settings_();
   uart_port_t uart_num_{UART_NUM_MAX};
+  size_t event_queue_size_{0};
+  QueueHandle_t uart_event_queue_{nullptr};
+  // Partial frame carried across loop() iterations: the driver splits a long frame into
+  // several UART_DATA events when rx_full_threshold is reached, and only the LAST of them
+  // carries timeout_flag. See read_frame().
+  std::vector<uint8_t> frame_accum_;
+  uint32_t frame_desync_count_{0};
+  uint32_t rx_overrun_count_{0};
+  uint32_t data_event_count_{0};
+  uint32_t timeout_event_count_{0};
+  bool orphan_strike_{false};
+  uint32_t orphan_strike_ms_{0};
+  void apply_always_rx_timeout_();
+  void frame_resync_(const char *why);
+  void check_orphaned_bytes_();
   uart_config_t get_config_();
 
   struct Framing {

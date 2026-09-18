@@ -45,6 +45,13 @@ uart:
     rx_pin: 33
     baud_rate: 9600
     debug:
+  # Opt-in hardware frame boundaries. RX-only, which is the shape a bus sniffer uses.
+  # GPIO34 is input-only on the ESP32, so it can only ever be an rx_pin.
+  - id: uart_frames
+    rx_pin: 34
+    baud_rate: 9600
+    rx_timeout: 3
+    event_queue_size: 20
 
 packet_transport:
   - platform: uart

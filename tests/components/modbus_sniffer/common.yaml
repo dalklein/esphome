@@ -15,7 +15,8 @@ modbus:
     role: sniffer
 
 modbus_sniffer:
-  - modbus_id: sniff_hub1
+  - id: sniff1
+    modbus_id: sniff_hub1
     on_request:
       - lambda: |-
           ESP_LOGD("sniff", "request addr=%u fc=%u", address, request_pdu[0]);
@@ -28,3 +29,30 @@ modbus_sniffer:
                    (unsigned) payload.size());
   # No automations: exercises the codegen path where both are absent.
   - modbus_id: sniff_hub2
+
+# Sensors name a register and get published whenever an exchange covering it goes past. Both
+# addresses on one bus: a battery answering 0x0F and a meter answering 0x02.
+sensor:
+  - platform: modbus_sniffer
+    modbus_sniffer_id: sniff1
+    address: 0x0F
+    register: 202
+    name: "battery bus voltage"
+    unit_of_measurement: V
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+  - platform: modbus_sniffer
+    modbus_sniffer_id: sniff1
+    address: 0x0F
+    register: 203
+    value_type: S_WORD
+    name: "battery power"
+    unit_of_measurement: W
+  - platform: modbus_sniffer
+    modbus_sniffer_id: sniff1
+    address: 0x02
+    register: 40018
+    value_type: S_WORD
+    name: "meter power"
+    unit_of_measurement: W

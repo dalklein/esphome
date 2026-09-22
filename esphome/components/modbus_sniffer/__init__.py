@@ -2,7 +2,7 @@ from esphome import automation
 import esphome.codegen as cg
 from esphome.components import modbus
 import esphome.config_validation as cv
-from esphome.const import CONF_ON_RESPONSE
+from esphome.const import CONF_ID, CONF_ON_RESPONSE
 import esphome.final_validate as fv
 from esphome.types import ConfigType
 
@@ -12,17 +12,21 @@ MULTI_CONF = True
 
 CONF_ON_REQUEST = "on_request"
 
+modbus_sniffer_ns = cg.esphome_ns.namespace("modbus_sniffer")
+ModbusSniffer = modbus_sniffer_ns.class_("ModbusSniffer", cg.Component)
+
 # Spans, not copies, matching modbus_client. The PDUs are handed over undecoded so a lambda can
 # pass them straight to the modbus::helpers functions.
 _PDU_SPAN = cg.std_span.template(cg.uint8.operator("const"))
 
 CONFIG_SCHEMA = cv.Schema(
     {
+        cv.GenerateID(): cv.declare_id(ModbusSniffer),
         cv.GenerateID(modbus.CONF_MODBUS_ID): cv.use_id(modbus.ModbusSniffer),
         cv.Optional(CONF_ON_REQUEST): automation.validate_automation(single=True),
         cv.Optional(CONF_ON_RESPONSE): automation.validate_automation(single=True),
     }
-)
+).extend(cv.COMPONENT_SCHEMA)
 
 
 def _final_validate(config: ConfigType) -> None:
@@ -45,9 +49,12 @@ FINAL_VALIDATE_SCHEMA = _final_validate
 
 
 async def to_code(config):
-    # The hub IS the sniffer: `role: sniffer` creates it and owns the uart. This only attaches
-    # behaviour to it.
+    # The hub owns the uart and does the pairing; `role: sniffer` creates it. This component is
+    # what behaviour attaches to -- lambdas here, and sensors on its own platform.
     hub = await cg.get_variable(config[modbus.CONF_MODBUS_ID])
+    var = cg.new_Pvariable(config[CONF_ID])
+    await cg.register_component(var, config)
+    cg.add(var.set_parent(hub))
 
     if on_request := config.get(CONF_ON_REQUEST):
         await automation.build_automation(

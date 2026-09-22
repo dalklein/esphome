@@ -1451,7 +1451,9 @@ void ModbusSnifferHub::process_modbus_server_frame(uint8_t address, std::span<co
     return;
   }
 
-  this->response_trigger_.trigger(address, this->request_, pdu);
+  const std::span<const uint8_t> request_pdu = this->request_;
+  this->response_trigger_.trigger(address, request_pdu, pdu);
+  this->response_callbacks_.call(address, request_pdu, pdu);
   this->request_.init(0);
 }
 

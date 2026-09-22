@@ -428,6 +428,13 @@ class ModbusSnifferHub final : public ModbusPeerHub {
     return &this->response_trigger_;
   }
 
+  /// Same event as the trigger, but fans out: a Trigger has one automation parent, so a platform
+  /// that wants to observe exchanges cannot take it without displacing the user's on_response.
+  void add_on_response_callback(
+      std::function<void(uint8_t, std::span<const uint8_t>, std::span<const uint8_t>)> &&callback) {
+    this->response_callbacks_.add(std::move(callback));
+  }
+
  protected:
   void process_modbus_client_frame(uint8_t address, std::span<const uint8_t> pdu) override;
   void process_modbus_server_frame(uint8_t address, std::span<const uint8_t> pdu) override;
@@ -440,6 +447,7 @@ class ModbusSnifferHub final : public ModbusPeerHub {
 
   Trigger<uint8_t, std::span<const uint8_t>> request_trigger_;
   Trigger<uint8_t, std::span<const uint8_t>, std::span<const uint8_t>> response_trigger_;
+  CallbackManager<void(uint8_t, std::span<const uint8_t>, std::span<const uint8_t>)> response_callbacks_;
 };
 
 /// Callback contract. Each accepted request ends in exactly ONE terminal: on_response() (data),
